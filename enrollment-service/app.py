@@ -30,14 +30,14 @@ def get_db_connection():
     )
     return conn
 
-@app.route('/students', methods=['POST'])
-def create_student():
+@app.route('/enrollments', methods=['POST'])
+def create_enrollment():
     data = request.get_json()
-    first_name = data.get('first_name')
-    last_name = data.get('last_name')
-    email = data.get('email')
+    student_id = data.get('student_id')
+    course_id = data.get('course_id')
+    status = data.get('status', 'enrolled') # Default to 'enrolled' if not provided
 
-    if not all([first_name, last_name, email]):
+    if not all([student_id, course_id]):
         return jsonify({"error": "Missing data"}), 400
 
     conn = None
@@ -45,12 +45,12 @@ def create_student():
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO students (first_name, last_name, email) VALUES (%s, %s, %s) RETURNING student_id;",
-            (first_name, last_name, email)
+            "INSERT INTO enrollments (student_id, course_id, status) VALUES (%s, %s, %s) RETURNING enrollment_id;",
+            (student_id, course_id, status)
         )
-        student_id = cur.fetchone()[0]
+        enrollment_id = cur.fetchone()[0]
         conn.commit()
-        return jsonify({"message": "Student created", "student_id": student_id}), 201
+        return jsonify({"message": "Enrollment created", "enrollment_id": enrollment_id}), 201
     except Exception as e:
         if conn:
             conn.rollback()
@@ -59,30 +59,73 @@ def create_student():
         if conn:
             conn.close()
 
-@app.route('/students/<int:student_id>', methods=['GET'])
-def get_student(student_id):
+@app.route('/enrollments/<int:enrollment_id>', methods=['GET'])
+def get_enrollment(enrollment_id):
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT student_id, first_name, last_name, email, registration_date FROM students WHERE student_id = %s;", (student_id,))
-        student = cur.fetchone()
-        if student:
+        cur.execute("SELECT enrollment_id, student_id, course_id, enrollment_date, status FROM enrollments WHERE enrollment_id = %s;", (enrollment_id,))
+        enrollment = cur.fetchone()
+        if enrollment:
             return jsonify({
-                "student_id": student[0],
-                "first_name": student[1],
-                "last_name": student[2],
-                "email": student[3],
-                "registration_date": student[4].isoformat()
+                "enrollment_id": enrollment[0],
+                "student_id": enrollment[1],
+                "course_id": enrollment[2],
+                "enrollment_date": enrollment[3].isoformat(),
+                "status": enrollment[4]
             }), 200
-        return jsonify({"message": "Student not found"}), 404
+        return jsonify({"message": "Enrollment not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         if conn:
             conn.close()
 
-# Add UPDATE and DELETE endpoints similarly
+@app.route('/enrollments/<int:enrollment_id>', methods=['PUT'])
+def update_enrollment(enrollment_id):
+    data = request.get_json()
+    status = data.get('status')
+
+    if not status:
+        return jsonify({"error": "Missing status"}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE enrollments SET status = %s WHERE enrollment_id = %s;",
+            (status, enrollment_id)
+        )
+        if cur.rowcount == 0:
+            return jsonify({"message": "Enrollment not found"}), 404
+        conn.commit()
+        return jsonify({"message": "Enrollment updated successfully"}), 200
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/enrollments/<int:enrollment_id>', methods=['DELETE'])
+def delete_enrollment(enrollment_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM enrollments WHERE enrollment_id = %s;", (enrollment_id,))
+        if cur.rowcount == 0:
+            return jsonify({"message": "Enrollment not found"}), 404
+        conn.commit()
+        return jsonify({"message": "Enrollment deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))

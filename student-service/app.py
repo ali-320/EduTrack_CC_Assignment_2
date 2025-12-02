@@ -82,7 +82,52 @@ def get_student(student_id):
         if conn:
             conn.close()
 
-# Add UPDATE and DELETE endpoints similarly
+@app.route('/students/<int:student_id>', methods=['PUT'])
+def update_student(student_id):
+    data = request.get_json()
+    first_name = data.get('first_name')
+    last_name = data.get('last_name')
+    email = data.get('email')
+
+    if not all([first_name, last_name, email]):
+        return jsonify({"error": "Missing data"}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE students SET first_name = %s, last_name = %s, email = %s WHERE student_id = %s;",
+            (first_name, last_name, email, student_id)
+        )
+        if cur.rowcount == 0:
+            return jsonify({"message": "Student not found"}), 404
+        conn.commit()
+        return jsonify({"message": "Student updated successfully"}), 200
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/students/<int:student_id>', methods=['DELETE'])
+def delete_student(student_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM students WHERE student_id = %s;", (student_id,))
+        if cur.rowcount == 0:
+            return jsonify({"message": "Student not found"}), 404
+        conn.commit()
+        return jsonify({"message": "Student deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))

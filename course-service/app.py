@@ -30,27 +30,31 @@ def get_db_connection():
     )
     return conn
 
-@app.route('/students', methods=['POST'])
-def create_student():
+@app.route('/courses', methods=['POST'])
+def create_course():
     data = request.get_json()
-    first_name = data.get('first_name')
-    last_name = data.get('last_name')
-    email = data.get('email')
+    title = data.get('title')
+    description = data.get('description')
+    instructor = data.get('instructor')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    price = data.get('price')
 
-    if not all([first_name, last_name, email]):
-        return jsonify({"error": "Missing data"}), 400
+    if not title:
+        return jsonify({"error": "Missing title"}), 400
 
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO students (first_name, last_name, email) VALUES (%s, %s, %s) RETURNING student_id;",
-            (first_name, last_name, email)
+            """INSERT INTO courses (title, description, instructor, start_date, end_date, price) 
+               VALUES (%s, %s, %s, %s, %s, %s) RETURNING course_id;""",
+            (title, description, instructor, start_date, end_date, price)
         )
-        student_id = cur.fetchone()[0]
+        course_id = cur.fetchone()[0]
         conn.commit()
-        return jsonify({"message": "Student created", "student_id": student_id}), 201
+        return jsonify({"message": "Course created", "course_id": course_id}), 201
     except Exception as e:
         if conn:
             conn.rollback()
@@ -59,30 +63,81 @@ def create_student():
         if conn:
             conn.close()
 
-@app.route('/students/<int:student_id>', methods=['GET'])
-def get_student(student_id):
+@app.route('/courses/<int:course_id>', methods=['GET'])
+def get_course(course_id):
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT student_id, first_name, last_name, email, registration_date FROM students WHERE student_id = %s;", (student_id,))
-        student = cur.fetchone()
-        if student:
+        cur.execute("SELECT course_id, title, description, instructor, start_date, end_date, price FROM courses WHERE course_id = %s;", (course_id,))
+        course = cur.fetchone()
+        if course:
             return jsonify({
-                "student_id": student[0],
-                "first_name": student[1],
-                "last_name": student[2],
-                "email": student[3],
-                "registration_date": student[4].isoformat()
+                "course_id": course[0],
+                "title": course[1],
+                "description": course[2],
+                "instructor": course[3],
+                "start_date": course[4].isoformat() if course[4] else None,
+                "end_date": course[5].isoformat() if course[5] else None,
+                "price": float(course[6]) if course[6] is not None else None
             }), 200
-        return jsonify({"message": "Student not found"}), 404
+        return jsonify({"message": "Course not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         if conn:
             conn.close()
 
-# Add UPDATE and DELETE endpoints similarly
+@app.route('/courses/<int:course_id>', methods=['PUT'])
+def update_course(course_id):
+    data = request.get_json()
+    title = data.get('title')
+    description = data.get('description')
+    instructor = data.get('instructor')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    price = data.get('price')
+
+    if not title:
+        return jsonify({"error": "Missing title"}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE courses SET title = %s, description = %s, instructor = %s, 
+               start_date = %s, end_date = %s, price = %s WHERE course_id = %s;""",
+            (title, description, instructor, start_date, end_date, price, course_id)
+        )
+        if cur.rowcount == 0:
+            return jsonify({"message": "Course not found"}), 404
+        conn.commit()
+        return jsonify({"message": "Course updated successfully"}), 200
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/courses/<int:course_id>', methods=['DELETE'])
+def delete_course(course_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM courses WHERE course_id = %s;", (course_id,))
+        if cur.rowcount == 0:
+            return jsonify({"message": "Course not found"}), 404
+        conn.commit()
+        return jsonify({"message": "Course deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8081)))
