@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: student-service
+  labels:
+    app: student-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: student-service
+  template:
+    metadata:
+      labels:
+        app: student-service
+    spec:
+      serviceAccountName: student-service-ksa
+      containers:
+      - name: student-service
+        image: us-central1-docker.pkg.dev/edutrack-cc-ass-2/edutrack-docker-repo/student-service:v1.0.0
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_HOST
+          value: "/cloudsql/edutrack-cc-ass-2:us-central1-a:student-db-instance"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: "student_db"
+        - name: DB_USER
+          value: "student_user"
+        - name: PROJECT_ID
+          value: "edutrack-cc-ass-2"
+        # --- MODIFICATION STARTS HERE ---
+        - name: DB_PASSWORD_FILE # New env var to point to the file
+          value: "/mnt/secrets-store/db_password"
+        # Remove the 'DB_PASSWORD' env var that used secretKeyRef
+        # --- MODIFICATION ENDS HERE ---
+        volumeMounts:
+        - name: gcp-secret-volume
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: gcp-secret-volume
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: student-db-secret-provider
+          # --- REMOVED THE FOLLOWING SECTION ---
+          # secretObjects:
+          #   - secretName: student-db-password-secret
+          #     type: Opaque
+          #     data:
+          #       - key: db_password
+          #         objectName: db_password
+          # --- END OF REMOVED SECTION ---
+

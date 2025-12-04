@@ -14,10 +14,17 @@ SECRET_ID = os.environ.get("SECRET_ID", "enrollment-db-password")
 PROJECT_ID = os.environ.get("PROJECT_ID", "edutrack-cc-ass-2")
 
 def get_db_password():
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{PROJECT_ID}/secrets/{SECRET_ID}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("UTF-8")
+    db_password_file = os.environ.get("DB_PASSWORD_FILE")
+    if db_password_file and os.path.exists(db_password_file):
+        with open(db_password_file, 'r') as f:
+            return f.read().strip()
+    else:
+        # Fallback for local testing or if CSI is not configured to mount as file
+        # or if you want to explicitly fetch via API in other contexts
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{PROJECT_ID}/secrets/{SECRET_ID}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
 
 def get_db_connection():
     db_password = get_db_password()

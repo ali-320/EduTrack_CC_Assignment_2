@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enrollment-service
+  labels:
+    app: enrollment-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: enrollment-service
+  template:
+    metadata:
+      labels:
+        app: enrollment-service
+    spec:
+      serviceAccountName: enrollment-service-ksa
+      containers:
+      - name: enrollment-service
+        image: us-central1-docker.pkg.dev/edutrack-cc-ass-2/edutrack-docker-repo/enrollment-service:v1.0.0
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_HOST
+          value: "/cloudsql/edutrack-cc-ass-2:us-central1-a:enrollment-db-instance"
+        - name: DB_PORT
+          value: "5434"
+        - name: DB_NAME
+          value: "enrollment_db"
+        - name: DB_USER
+          value: "enrollment_user"
+        - name: PROJECT_ID
+          value: "edutrack-cc-ass-2"
+        # --- MODIFICATION STARTS HERE ---
+        - name: DB_PASSWORD_FILE # New env var to point to the file
+          value: "/mnt/secrets-store/db_password"
+        # Remove the 'DB_PASSWORD' env var that used secretKeyRef
+        # --- MODIFICATION ENDS HERE ---
+        volumeMounts:
+        - name: gcp-secret-volume
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: gcp-secret-volume
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: enrollment-db-secret-provider
+          # --- REMOVED THE FOLLOWING SECTION ---
+          # secretObjects:
+          #   - secretName: enrollment-db-password-secret
+          #     type: Opaque
+          #     data:
+          #       - key: db_password
+          #         objectName: db_password
+          # --- END OF REMOVED SECTION ---
+
