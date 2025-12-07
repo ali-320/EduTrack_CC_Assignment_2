@@ -12,6 +12,13 @@ spec:
   rules:
   - http:
       paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: course-service # Name of your Kubernetes Service
+            port:
+              number: 80 # Port of your Kubernetes Service
       - path: /students
         pathType: Prefix
         backend:

@@ -99,5 +99,5 @@ def get_course_details(course_id):
 # Add other course-related endpoints (e.g., POST for new courses)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 

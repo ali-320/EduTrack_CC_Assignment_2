@@ -19,7 +19,7 @@ spec:
 
       containers:
       - name: student-service
-        image: us-central1-docker.pkg.dev/edutrack-cc-ass-2/edutrack-docker-repo/student-service:v1.0.0
+        image: us-central1-docker.pkg.dev/edutrack-cc-ass-2/edutrack-docker-repo/student-service:v1.0.1
         ports:
         - containerPort: 8080
         env:
