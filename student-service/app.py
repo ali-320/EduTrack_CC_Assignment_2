@@ -1,140 +1,123 @@
 import os
+import psycopg2 # Placeholder: Replace with your actual database driver (e.g., mysql.connector for MySQL)
 from flask import Flask, jsonify, request
-import psycopg2
-from google.cloud import secretmanager
 
 app = Flask(__name__)
 
-# Configuration for Student Service
-DB_HOST = os.environ.get("DB_HOST", "127.0.0.1") # For local testing with proxy
-DB_PORT = os.environ.get("DB_PORT", "5432")
-DB_NAME = os.environ.get("DB_NAME", "student_db")
+# Environment variables - these values will be supplied by your Kubernetes Deployment
+# PROJECT_ID is kept as a general environment variable, not strictly needed for secret retrieval with K8s Secrets
+PROJECT_ID = os.environ.get("PROJECT_ID", "edutrack-cc-ass-2") 
+DB_HOST = os.environ.get("DB_HOST", "127.0.0.1") 
+DB_PORT = os.environ.get("DB_PORT", "5432") 
+DB_NAME = os.environ.get("DB_NAME", "student_db") # Ensure this matches your Cloud SQL database name
 DB_USER = os.environ.get("DB_USER", "student_user")
-SECRET_ID = os.environ.get("SECRET_ID", "student-db-password")
-PROJECT_ID = os.environ.get("PROJECT_ID", "edutrack-cc-ass-2")
+DB_PASSWORD_FILE = os.environ.get("DB_PASSWORD_FILE") # Path to mounted secret file
 
 def get_db_password():
-    db_password_file = os.environ.get("DB_PASSWORD_FILE")
-    if db_password_file and os.path.exists(db_password_file):
-        with open(db_password_file, 'r') as f:
-            return f.read().strip()
+    """
+    Retrieves the database password from the mounted file.
+    This function expects DB_PASSWORD_FILE to be set and the file to exist.
+    """
+    if DB_PASSWORD_FILE and os.path.exists(DB_PASSWORD_FILE):
+        try:
+            with open(DB_PASSWORD_FILE, 'r') as f:
+                return f.read().strip()
+        except Exception as e:
+            app.logger.error(f"Error reading DB password file {DB_PASSWORD_FILE}: {e}")
+            return None
     else:
-        # Fallback for local testing or if CSI is not configured to mount as file
-        # or if you want to explicitly fetch via API in other contexts
-        client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{PROJECT_ID}/secrets/{SECRET_ID}/versions/latest"
-        response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("UTF-8")
+        app.logger.error(f"DB_PASSWORD_FILE environment variable not set or file not found at {DB_PASSWORD_FILE}")
+        return None
 
-def get_db_connection():
+def init_db_connection():
+    """Initializes and returns a database connection."""
     db_password = get_db_password()
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        database=DB_NAME,
-        user=DB_USER,
-        password=db_password
-    )
-    return conn
+    if not db_password:
+        app.logger.error("Database password not retrieved. Cannot connect to DB.")
+        return None
+
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=db_password,
+        )
+        app.logger.info("Successfully connected to the database.")
+        return conn
+    except Exception as e:
+        app.logger.error(f"Error connecting to database '{DB_NAME}' at {DB_HOST}:{DB_PORT} for user '{DB_USER}': {e}")
+        return None
+
+# --- Health Check Endpoint ---
+@app.route('/')
+def health_check():
+    """
+    Simple health check endpoint for Load Balancer.
+    Returns 200 OK if the application is running.
+    Optionally, you can add a database ping for a more robust health check.
+    """
+    app.logger.debug("Health check requested.")
+    # Optional: More robust health check including DB connection
+    # try:
+    #     conn = init_db_connection()
+    #     if conn:
+    #         conn.close()
+    #         return "OK", 200
+    #     else:
+    #         return "DB Connection Failed", 500
+    # except Exception as e:
+    #     app.logger.error(f"Health check DB ping failed: {e}")
+    #     return "DB Connection Error", 500
+    return "OK", 200
+
+# --- Student Service Endpoints (Placeholder) ---
+@app.route('/students', methods=['GET'])
+def get_students():
+    conn = init_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email FROM students")
+            students = [{"id": row[0], "name": row[1], "email": row[2]} for row in cursor.fetchall()]
+            cursor.close()
+            return jsonify(students)
+        except Exception as e:
+            app.logger.error(f"Error fetching students: {e}")
+            return jsonify({"error": "Failed to fetch students"}), 500
+        finally:
+            conn.close()
+    return jsonify({"error": "Database connection failed"}), 500
 
 @app.route('/students', methods=['POST'])
-def create_student():
+def register_student():
     data = request.get_json()
-    first_name = data.get('first_name')
-    last_name = data.get('last_name')
+    name = data.get('name')
     email = data.get('email')
 
-    if not all([first_name, last_name, email]):
-        return jsonify({"error": "Missing data"}), 400
+    if not name or not email:
+        return jsonify({"error": "Name and email are required"}), 400
 
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO students (first_name, last_name, email) VALUES (%s, %s, %s) RETURNING student_id;",
-            (first_name, last_name, email)
-        )
-        student_id = cur.fetchone()[0]
-        conn.commit()
-        return jsonify({"message": "Student created", "student_id": student_id}), 201
-    except Exception as e:
-        if conn:
+    conn = init_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO students (name, email) VALUES (%s, %s) RETURNING id", (name, email))
+            student_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            return jsonify({"id": student_id, "name": name, "email": email}), 201
+        except Exception as e:
+            app.logger.error(f"Error registering student: {e}")
             conn.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
+            return jsonify({"error": "Failed to register student"}), 500
+        finally:
             conn.close()
+    return jsonify({"error": "Database connection failed"}), 500
 
-@app.route('/students/<int:student_id>', methods=['GET'])
-def get_student(student_id):
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT student_id, first_name, last_name, email, registration_date FROM students WHERE student_id = %s;", (student_id,))
-        student = cur.fetchone()
-        if student:
-            return jsonify({
-                "student_id": student[0],
-                "first_name": student[1],
-                "last_name": student[2],
-                "email": student[3],
-                "registration_date": student[4].isoformat()
-            }), 200
-        return jsonify({"message": "Student not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
-
-@app.route('/students/<int:student_id>', methods=['PUT'])
-def update_student(student_id):
-    data = request.get_json()
-    first_name = data.get('first_name')
-    last_name = data.get('last_name')
-    email = data.get('email')
-
-    if not all([first_name, last_name, email]):
-        return jsonify({"error": "Missing data"}), 400
-
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE students SET first_name = %s, last_name = %s, email = %s WHERE student_id = %s;",
-            (first_name, last_name, email, student_id)
-        )
-        if cur.rowcount == 0:
-            return jsonify({"message": "Student not found"}), 404
-        conn.commit()
-        return jsonify({"message": "Student updated successfully"}), 200
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
-
-@app.route('/students/<int:student_id>', methods=['DELETE'])
-def delete_student(student_id):
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM students WHERE student_id = %s;", (student_id,))
-        if cur.rowcount == 0:
-            return jsonify({"message": "Student not found"}), 404
-        conn.commit()
-        return jsonify({"message": "Student deleted successfully"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
+# Add other student-related endpoints (e.g., /students/<id> to view profile)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+

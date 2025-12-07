@@ -14,6 +14,9 @@ spec:
       labels:
         app: enrollment-service
     spec:
+      # REMOVE serviceAccountName if it was here for Workload Identity
+      # serviceAccountName: enrollment-service-ksa # REMOVE THIS LINE
+
       containers:
       - name: enrollment-service
         image: us-central1-docker.pkg.dev/edutrack-cc-ass-2/edutrack-docker-repo/enrollment-service:v1.0.0
@@ -23,23 +26,46 @@ spec:
         - name: PROJECT_ID
           value: "edutrack-cc-ass-2"
         - name: DB_HOST
-          value: "127.0.0.1" # Replace with your Cloud SQL Auth Proxy or Private IP
+          value: "127.0.0.1" # <--- IMPORTANT: Connect to the sidecar proxy on localhost
         - name: DB_PORT
-          value: "5432"
+          value: "5434"
         - name: DB_NAME
           value: "enrollment_db"
         - name: DB_USER
           value: "enrollment_user"
         - name: DB_PASSWORD_FILE
-          value: "/mnt/secrets-store/db_password"
+          value: "/mnt/secrets-store/db_password" # Path to your K8s Secret mounted by Python app
         volumeMounts:
         - name: db-password-volume
           mountPath: "/mnt/secrets-store"
           readOnly: true
+
+      - name: cloudsql-proxy # <--- CLOUD SQL PROXY SIDECAR CONTAINER
+        image: gcr.io/cloudsql-docker/gce-proxy:1.28.0 # Use a stable version
+        command:
+          - "/cloud_sql_proxy"
+          # Replace with your enrollment database instance connection name: PROJECT_ID:REGION:INSTANCE_NAME
+          - "-instances=edutrack-cc-ass-2:us-central1-a:enrollment-db-instance=tcp:5434"
+          - "-credentials-file=/secrets/cloudsql/credentials.json" # <--- Path to mounted key file
+        securityContext:
+          runAsNonRoot: true
+        volumeMounts: # <--- MOUNT VOLUME FOR PROXY CREDENTIALS
+        - name: cloudsql-credentials
+          mountPath: /secrets/cloudsql
+          readOnly: true
+
       volumes:
-      - name: db-password-volume
+      - name: db-password-volume # Volume for your app's DB password (from K8s Secret)
         secret:
-          secretName: enrollment-db-password-secret
+          secretName: enrollment-db-password-secret # Reference the K8s Secret for app's password
           items:
           - key: db_password
             path: db_password
+
+      - name: cloudsql-credentials # <--- NEW VOLUME FOR PROXY CREDENTIALS
+        secret:
+          secretName: enrollment-db-proxy-secret # Reference the K8s Secret with the SA key
+          items:
+          - key: credentials.json
+            path: credentials.json # Mounts the 'credentials.json' key from the secret as a file
+
