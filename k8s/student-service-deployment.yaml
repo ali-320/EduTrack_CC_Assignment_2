@@ -45,8 +45,8 @@ spec:
         command:
           - "/cloud_sql_proxy"
           # Replace with your student database instance connection name: PROJECT_ID:REGION:INSTANCE_NAME
-          - "-instances=edutrack-cc-ass-2:us-central1-a:student-db-instance=tcp:5432"
-          - "-credentials-file=/secrets/cloudsql/credentials.json" # <--- Path to mounted key file
+          - "-instances=edutrack-cc-ass-2:us-central1:student-db-instance=tcp:5432"
+          - "-credential_file=/secrets/cloudsql/credentials.json" # <--- Path to mounted key file
         securityContext:
           runAsNonRoot: true
         volumeMounts: # <--- MOUNT VOLUME FOR PROXY CREDENTIALS
