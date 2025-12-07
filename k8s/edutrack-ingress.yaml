@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: edutrack-ingress
+  annotations:
+    # Use GKE's default Ingress controller which provisions a Google Cloud Load Balancer
+    kubernetes.io/ingress.class: "gce"
+    # Optional: For HTTPS, you'd add annotations for managed certificates or pre-shared certificates
+    kubernetes.io/ingress.global-static-ip-name: "edutrack-static-ip" # For the static IP
+    # networking.gke.io/managed-certificates: "edutrack-managed-cert" # For Google-managed SSL
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /students
+        pathType: Prefix
+        backend:
+          service:
+            name: student-service # Name of your Kubernetes Service
+            port:
+              number: 80 # Port of your Kubernetes Service
+      - path: /courses
+        pathType: Prefix
+        backend:
+          service:
+            name: course-service
+            port:
+              number: 80
+      - path: /enrollments
+        pathType: Prefix
+        backend:
+          service:
+            name: enrollment-service
+            port:
+              number: 80
